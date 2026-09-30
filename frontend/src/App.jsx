@@ -63,6 +63,26 @@ export default function App() {
     })();
   }, []);
 
+  // refresh the inbox so conversations processed in the background (e.g. demo customers) show up live
+  const analyzingRef = useRef(false);
+  useEffect(() => { analyzingRef.current = isAnalyzing; }, [isAnalyzing]);
+  useEffect(() => {
+    const t = setInterval(async () => {
+      if (analyzingRef.current) return;
+      try {
+        const [convs, st] = await Promise.all([getConversations(), getStats()]);
+        if (!analyzingRef.current && convs.length) {
+          setConversations(convs);
+          setStats(st);
+          setSelectedId((id) => id ?? convs[0].id);
+        }
+      } catch {
+        /* keep showing the last good state; errors surface on the next user action */
+      }
+    }, 4000);
+    return () => clearInterval(t);
+  }, []);
+
   const handleSendMessage = async (text) => {
     if (!selectedConversation || isAnalyzing) return;
     // show the customer's own message immediately; everything else comes back from the pipeline
