@@ -1,8 +1,9 @@
+import os
 from functools import lru_cache
 
 from transformers import pipeline
 
-MODEL = "cardiffnlp/twitter-roberta-base-sentiment-latest"
+MODEL = os.getenv("SENTIMENT_MODEL", "cardiffnlp/twitter-roberta-base-sentiment-latest")
 
 
 @lru_cache(maxsize=1)

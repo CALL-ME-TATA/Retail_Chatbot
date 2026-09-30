@@ -28,3 +28,11 @@ def test_one_negative_after_neutral_no_escalation():
     t = Tracker()
     t.update(P("neutral"), "what is the return window")
     assert not t.update(P("negative"), "my order is a bit late")["escalate"]
+
+
+def test_refund_demand_escalates_even_if_neutral():
+    assert Tracker().update(P("neutral"), "I want a full refund and compensation")["escalate"]
+
+
+def test_refund_question_does_not_escalate():
+    assert not Tracker().update(P("neutral"), "how do refunds work?")["escalate"]

@@ -9,6 +9,8 @@ REPEAT_SIM = 0.4      # R4 word-overlap threshold
 _TRIGGER = re.compile(
     r"\b(lawyer|attorney|legal action|sue|court|fraud|scam|chargeback|"
     r"speak to (?:a |an )?(?:human|person|agent|manager|representative)|real person)\b", re.I)
+_DEMAND = re.compile(
+    r"\b(want|need|demand|expect|give me|owe|entitled|require)\b.{0,40}\b(refund|money back|compensat\w*|reimburs\w*)", re.I)
 
 
 def _words(t):
@@ -32,6 +34,8 @@ class Tracker:
         reason, urgency = None, "medium"
         if _TRIGGER.search(text):
             reason, urgency = "Customer mentioned legal/fraud issue or asked for a human (R3)", "high"
+        elif _DEMAND.search(text):
+            reason = "Customer is demanding a refund/compensation, which needs human approval (R5)"
         elif len(self.turns) >= 2 and all(l == "negative" and c >= NEG_CONF for l, c, _ in self.turns[-2:]):
             reason = "Two consecutive confident negative turns (R1)"
         elif label == "negative" and (self.C <= SCORE_T or self._drift() <= DRIFT_T):
