@@ -58,6 +58,8 @@ ASPECTS = {
     "Product": r"quality|broke|damag|defect|stopped working|size|battery|sneaker|earbud|monitor|coffee|backpack|camera|blanket|moisturi",
     "Service": r"support|agent|service|rude|ignor|staff|representative",
 }
+SCOPE_INTENT = {"off_topic": "Off-topic (declined)", "injection": "Instruction-override attempt (declined)",
+                "greeting": "Greeting / small talk", "empty": "Empty message"}
 EMOTION = {"negative": "Frustrated", "neutral": "Inquiring", "positive": "Delighted"}
 _ORDER = re.compile(r"ORD-\d+", re.I)
 
@@ -108,7 +110,8 @@ def _view(c: dict) -> dict:
     kind = "complaint" if label == "negative" else "feedback" if label == "positive" else "inquiry"
     v.update(sentiment=label, confidence=last["sentiment"]["score"], emotion=EMOTION[label], aspect=last["aspect"],
              aspectBreakdown=[{"aspect": t["aspect"], "sentiment": t["sentiment"].lower(), "note": t["text"]} for t in c["turns"][-3:]],
-             intent="Escalation required" if esc["escalate"] else f"{last['aspect']} {kind}",
+             intent=("Escalation required" if esc["escalate"] else SCOPE_INTENT.get(last["scope"])
+                     or f"{last['aspect']} {kind}"),
              priority=esc["urgency"] if esc["escalate"] else "low", escalate=esc["escalate"],
              strategy={"type": "ACKNOWLEDGE → ACT" if label == "negative" else "INFORM" if label == "neutral" else "AFFIRM",
                        "action": STRATEGY[label], "guidance": STRATEGY[label]})
@@ -189,7 +192,7 @@ def _process(c: dict, message: str) -> dict:
     t0 = time.time()
     r = c["session"].chat(message)
     latency = time.time() - t0
-    r["aspect"] = tag_aspect(message)
+    r["aspect"] = tag_aspect(message) if r["scope"] == "retail" else "Other"
     for oid in _ORDER.findall(message):
         if o := KB["orders"].get(oid.upper()):
             c["order"] = {"id": oid.upper(), **o}
