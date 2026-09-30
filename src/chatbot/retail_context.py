@@ -34,6 +34,8 @@ def retrieve(query: str, k: int = 3) -> list[str]:
         o = _KB["orders"].get(oid.upper())
         if o:
             out.append(f"Order {oid.upper()}: {o['item']}, status {o['status']}. {o['note']}")
+        else:  # stop the LLM from inventing a status for an order we don't have
+            out.append(f"Order {oid.upper()}: not found in our system. Ask the customer to double-check the order number.")
     sims = cosine_similarity(_VEC.transform([query]), _MAT)[0]
     out += [_DOCS[i] for i in sims.argsort()[::-1][:k] if sims[i] > 0]
     return out

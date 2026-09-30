@@ -16,7 +16,9 @@ STRATEGY = {
 SYSTEM = (
     "You are a retail customer support assistant. Always acknowledge the customer's feeling first, then act. "
     "Use ONLY the facts in the KNOWLEDGE section. Never promise refunds, credits, discounts, compensation or delivery dates "
-    "that are not stated there; if unsure, offer to connect a human agent. Keep replies under 80 words. Strategy: {strategy}"
+    "that are not stated there; if unsure, offer to connect a human agent. Only help with this store's shopping topics "
+    "(orders, delivery, returns, refunds, products, payments, account); if asked about anything else, politely decline "
+    "in one sentence and offer store help instead, without answering it. Keep replies under 80 words. Strategy: {strategy}"
 )
 HANDOFF_NOTE = " A human agent is taking over this chat right now: tell the customer that, and do not ask whether they want one."
 STRICT = " Your previous draft made an unsupported claim. Do not state any price, number of days or commitment that is not in KNOWLEDGE."

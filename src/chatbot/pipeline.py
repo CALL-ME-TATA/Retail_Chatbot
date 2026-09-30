@@ -1,7 +1,8 @@
 """LangGraph state machine for one chat turn.
 
-mask_pii -> sentiment -> track -> retrieve -> generate -> guard -+-> finalize -> END
-                                                 ^--- retry ----+  (once, with a stricter prompt)
+mask_pii -> scope -> sentiment -+-> track -> retrieve -> generate -> guard -+-> finalize -> END
+                                 |                         ^--- retry ----+       ^
+                                 +-> decline (off-topic, injection, greeting, empty) --+
 """
 from typing import Any, TypedDict
 
@@ -10,6 +11,7 @@ from langgraph.graph import END, START, StateGraph
 from src.chatbot.escalation import Tracker
 from src.chatbot.responder import FALLBACK, HANDOFF, draft, is_safe
 from src.chatbot.retail_context import retrieve
+from src.chatbot.scope import canned_reply, classify_scope
 from src.data.preprocess import mask_pii
 from src.sentiment.predict import predict
 
@@ -19,6 +21,7 @@ MAX_ATTEMPTS = 2
 class State(TypedDict, total=False):
     message: str
     text: str
+    scope: str
     history: list
     tracker: Any
     pred: dict
@@ -39,8 +42,23 @@ def n_mask(s):
     return {"text": mask_pii(s["message"]), "path": _visit(s, "mask_pii")}
 
 
+def n_scope(s):
+    return {"scope": classify_scope(s["text"], bool(s["tracker"].turns)), "path": _visit(s, "scope")}
+
+
 def n_sentiment(s):
-    return {"pred": predict(s["text"]), "path": _visit(s, "sentiment")}
+    pred = predict(s["text"]) if s["scope"] != "empty" else {"label": "neutral", "score": 0.0, "probs": {}}
+    return {"pred": pred, "path": _visit(s, "sentiment")}
+
+
+def after_sentiment(s):
+    return "track" if s["scope"] == "retail" else "decline"
+
+
+def n_decline(s):
+    # fixed reply, no LLM call, and the turn does not move the trajectory or trigger escalation
+    return {"reply": canned_reply(s["scope"], s["text"]), "safe": True, "attempts": 0, "snippets": [],
+            "esc": {"escalate": False, "reason": None, "urgency": "none"}, "path": _visit(s, "decline")}
 
 
 def n_track(s):
@@ -79,13 +97,14 @@ def n_finalize(s):
 
 def _build():
     g = StateGraph(State)
-    for name, fn in [("mask_pii", n_mask), ("sentiment", n_sentiment), ("track", n_track), ("retrieve", n_retrieve),
+    for name, fn in [("mask_pii", n_mask), ("scope", n_scope), ("sentiment", n_sentiment), ("decline", n_decline), ("track", n_track), ("retrieve", n_retrieve),
                      ("generate", n_generate), ("guardrail", n_guard), ("finalize", n_finalize)]:
         g.add_node(name, fn)
     g.add_edge(START, "mask_pii")
-    for a, b in [("mask_pii", "sentiment"), ("sentiment", "track"), ("track", "retrieve"),
-                 ("retrieve", "generate"), ("generate", "guardrail")]:
+    for a, b in [("mask_pii", "scope"), ("scope", "sentiment"), ("track", "retrieve"),
+                 ("retrieve", "generate"), ("generate", "guardrail"), ("decline", "finalize")]:
         g.add_edge(a, b)
+    g.add_conditional_edges("sentiment", after_sentiment, {"track": "track", "decline": "decline"})
     g.add_conditional_edges("guardrail", after_guard, {"finalize": "finalize", "generate": "generate"})
     g.add_edge("finalize", END)
     return g.compile()
@@ -104,7 +123,7 @@ class Session:
         s = GRAPH.invoke({"message": message, "history": self.history, "tracker": self.tracker, "path": []})
         self.history += [{"role": "user", "content": s["text"]}, {"role": "assistant", "content": s["final"]}]
         self.trajectory.append(round(self.tracker.C, 3))
-        return {"reply": s["final"], "sentiment": s["pred"], "escalation": s["esc"],
+        return {"reply": s["final"], "sentiment": s["pred"], "escalation": s["esc"], "scope": s["scope"],
                 "trajectory": self.trajectory, "path": s["path"],
                 "attempts": s["attempts"], "guardrail_passed": s["safe"], "handoff_summary": self._summary(s["esc"])}
 
