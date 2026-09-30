@@ -2,7 +2,10 @@ pandas
 scikit-learn
 transformers
 torch
+datasets
 streamlit
 pytest
 python-dotenv
+langgraph
+langchain-google-genai
 anthropic
