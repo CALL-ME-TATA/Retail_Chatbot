@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MessageSquare, AlertOctagon, PhoneCall, Plus } from 'lucide-react';
 
 import Navbar from './components/Navbar';
@@ -29,6 +29,7 @@ export default function App() {
   const [stats, setStats] = useState(null);
   const [error, setError] = useState(null);
 
+  const booted = useRef(false); // StrictMode runs effects twice in dev; create only one conversation
   const selectedConversation = conversations.find((c) => c.id === selectedId) || null;
 
   const upsert = (conv) =>
@@ -44,6 +45,8 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (booted.current) return;
+    booted.current = true;
     (async () => {
       try {
         const convs = await getConversations();
