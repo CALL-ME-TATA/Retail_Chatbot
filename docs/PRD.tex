@@ -1,0 +1,340 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,microtype,booktabs,longtable,array,enumitem,xcolor,titlesec}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black,citecolor=blue!50!black]{hyperref}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+\setlist{itemsep=2pt,topsep=3pt}
+\titleformat{\section}{\Large\bfseries}{\thesection}{0.6em}{}
+\newcommand{\req}[1]{\textbf{#1}}
+
+\title{\textbf{EmpathIQ: A Retail Customer Sentiment Analysis Chatbot}\\[2pt]
+\large Product Requirements Document, Literature Review and Implementation Plan\\
+\normalsize TCS Hackathon (2-hour build)}
+\author{Team CALL-ME-TATA}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+%% ------------------------------------------------------------
+\section{Executive Summary}
+Retail companies receive large volumes of feedback through reviews, chats and surveys. Manual analysis is slow and subjective, and late responses to unhappy customers hurt retention. \textbf{EmpathIQ} is a chatbot that (1) detects customer sentiment turn by turn and across the whole conversation, (2) writes an empathetic reply grounded in product, order and policy data, and (3) recommends escalation to a human agent when the situation calls for it.
+
+The literature (Section~\ref{sec:lit}) treats these three tasks separately. We found no work that evaluates detection, empathetic reply and escalation together in a retail setting. That end-to-end pipeline, evaluated with cost-sensitive metrics and a policy-safety check, is our contribution.
+
+\paragraph{Hackathon scope.} The build window is two hours. Section~\ref{sec:plan} therefore fixes a deliberately small stack: a pretrained sentiment model, a rule-plus-score escalation policy, an LLM reply generator grounded in a tiny JSON knowledge base, and a Streamlit chat UI. Everything outside that is listed as future work.
+
+%% ------------------------------------------------------------
+\section{Problem Statement}
+\begin{itemize}
+\item Feedback volume is high and manual review is slow and inconsistent.
+\item Delayed handling of negative sentiment damages retention and brand reputation.
+\item Existing sentiment tools lack conversational context and do not run in real time.
+\item Customers rate chatbot service lower than human service, and perceived empathy fully mediates that gap \cite{markovitch2024}.
+\end{itemize}
+\textbf{Need:} an AI chatbot that engages customers, detects sentiment dynamically and responds with empathy or an escalation recommendation.
+
+%% ------------------------------------------------------------
+\section{Goals, Non-Goals and Success Metrics}
+\subsection{Goals}
+\begin{enumerate}
+\item Classify each customer turn as negative, neutral or positive in real time.
+\item Track sentiment trajectory over the conversation.
+\item Generate empathetic, policy-safe replies using product and order context.
+\item Recommend escalation, with a stated reason, using explicit rules on top of a model score.
+\item Ship a simple chat interface, documentation and a demo video.
+\end{enumerate}
+
+\subsection{Non-Goals (for the 2-hour build)}
+Voice input, multilingual or code-mixed support, training a model from scratch, real order-system integration, real human-agent handoff tooling, and long-term user profiles.
+
+\subsection{Success Metrics}
+\begin{center}
+\begin{tabular}{@{}p{4.2cm}p{4.6cm}p{5.6cm}@{}}
+\toprule
+\textbf{Metric} & \textbf{Target} & \textbf{Note}\\
+\midrule
+Sentiment accuracy & $\ge 80\%$ & Hackathon requirement\\
+Macro-F1 & $\ge 0.78$ & Accuracy alone can be met by a skewed model \cite{pereira2022}\\
+Negative-class recall & $\ge 0.85$ & Missed negatives are the costly error\\
+Escalation recall (on labeled scenarios) & $\ge 0.90$ & Too-late handoff costs more than too-early\\
+Empathy rating (1--5, human) & mean $\ge 4.0$ & 3 raters, 20 replies\\
+Unauthorized commitments & 0 & Policy-safety check (Section~\ref{sec:safety})\\
+Latency per turn & $< 3$\,s & Real-time feel\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%% ------------------------------------------------------------
+\section{Users and Scenarios}
+\begin{itemize}
+\item \textbf{Customer:} wants a fast, respectful answer and a way to reach a person when needed.
+\item \textbf{Support agent:} wants escalated chats delivered with a summary, sentiment history and the reason for escalation.
+\item \textbf{Support manager:} wants a view of sentiment across chats (stretch goal).
+\end{itemize}
+
+\begin{center}
+\begin{tabular}{@{}l p{6.3cm} p{5cm}@{}}
+\toprule
+\textbf{ID} & \textbf{Scenario} & \textbf{Expected behavior}\\
+\midrule
+S1 & Happy customer praises fast delivery & Warm thanks, no escalation\\
+S2 & Neutral query about return window & Factual answer from policy KB\\
+S3 & Mildly annoyed about a late order & Apologize, give tracking status, offer next step\\
+S4 & Angry, repeated complaint, third negative turn & Empathize, escalate with summary\\
+S5 & Mixed message: loves product, hates delivery & Aspect-aware reply addressing both\\
+S6 & Customer demands refund the policy does not allow & Empathize, do not promise refund, offer human review\\
+S7 & Legal threat or fraud claim & Immediate escalation\\
+S8 & Sarcasm (``great, another delay'') & Detect negative, respond with empathy\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%% ------------------------------------------------------------
+\section{Functional Requirements}
+\begin{longtable}{@{}p{1.3cm}p{10.2cm}p{2.2cm}@{}}
+\toprule
+\textbf{ID} & \textbf{Requirement} & \textbf{Priority}\\
+\midrule
+\endhead
+FR1 & Chat UI accepts a message and returns a reply and a sentiment badge. & Must\\
+FR2 & Sentiment classifier returns label and probabilities per turn. & Must\\
+FR3 & Conversation-level sentiment is a decayed average of turn scores plus a slope (drift). & Must\\
+FR4 & Escalation engine returns \{escalate: bool, reason, urgency\}. & Must\\
+FR5 & Reply generator conditions on sentiment, conversation history and retrieved KB entries. & Must\\
+FR6 & Reply generator must not invent refunds, discounts or timelines absent from the KB. & Must\\
+FR7 & PII masking is applied to user text before storage or logging. & Must\\
+FR8 & Escalation produces a handoff summary for the human agent. & Should\\
+FR9 & Aspect tag (product, delivery, price, service) on each negative turn. & Should\\
+FR10 & Sidebar shows sentiment trajectory chart. & Should\\
+FR11 & Evaluation script reports accuracy, macro-F1, negative recall and escalation recall. & Must\\
+FR12 & Human-labeled test set of at least 100 turns. & Must\\
+\bottomrule
+\end{longtable}
+
+\section{Non-Functional Requirements}
+Latency under 3\,s per turn; runs on a laptop CPU with an API call for generation; no raw PII persisted; reproducible via \texttt{requirements.txt}; every reply carries a disclosure that the customer is talking to an AI, since emotion-sensitive bots can backfire when the source is undisclosed or discovered \cite{brun2025}.
+
+%% ------------------------------------------------------------
+\section{Literature Review}\label{sec:lit}
+We decompose the problem into three coupled tasks and one cross-cutting concern: (A) sentiment and emotion detection, (B) empathetic response generation, (C) escalation, and (D--F) impact, evaluation and data.
+
+\subsection{Sentiment and emotion detection}
+Zhang et al.\ evaluated LLMs on 13 sentiment tasks over 26 datasets: LLMs do well on simple tasks, lag on tasks needing structured sentiment understanding, and beat small models in few-shot settings \cite{zhang2024}. Aspect-based sentiment analysis organizes sentiment by aspect term, category, opinion and polarity \cite{zhang2022absa}, which matters because one retail message can praise a product and complain about delivery. Emotion recognition in conversation must handle context, sarcasm, informal language, real-time operation and class imbalance, and the survey reports F1 rather than accuracy \cite{pereira2022}. Context-dependent utterance embeddings reach state of the art on DailyDialog and EmoWOZ, the closest public analogue to service chat \cite{pereira2023}. Code-mixed Hinglish sentiment peaked at 75.0\% F1 in SemEval-2020 \cite{patwa2020}, below our target.
+
+\subsection{Empathetic response generation}
+EmpatheticDialogues (25k conversations) produced models rated more empathetic than models trained on internet conversation alone \cite{rashkin2019}. ESConv defines the emotional support task with eight strategies across exploration, comforting and action stages, and names customer service chats as a use case \cite{liu2021esc}. LLMs show strong strategy preference bias and cannot be good emotional supporters alone; external assistance helps \cite{kang2024}. The closest prior work trains on a 20-brand Twitter customer-service corpus and shows that emotion-aware models resemble human agent replies more closely \cite{agarwal2021}. EPITOME defines three empathy mechanisms (emotional reactions, interpretations, explorations) with a RoBERTa detector, but is trained on mental-health data and needs retail validation \cite{sharma2020}. RAG produces more specific and factual output than parametric-only generation, which supports grounding in product and order data \cite{lewis2020}.
+
+\subsection{Escalation and handoff}
+Machine-human chatting handoff monitors a conversation, anticipates chatbot failure and negative user emotion, and transfers to a human; the authors contribute the DAMI network, a tolerance-aware metric and two datasets \cite{liu2021handoff}. A vendor blog claims no public LLM-to-human handover dataset exists and that few teams measure handover timing; we could not locate the underlying preprint, so this is a lead, not a citation.
+
+\subsection{Does empathy matter?}
+Across 714 participants, chatbot service produced lower satisfaction than a human agent, fully mediated by perceived empathy, and empathetic wording closed the gap \cite{markovitch2024}. In a 30-participant study, an emotion-sensitive bot earned higher trust and competence ratings but did not change issue-resolution rates \cite{brun2025}.
+
+\subsection{Evaluation}
+Comparing to a gold human reply does not capture empathy, so multidimensional frameworks are needed \cite{raamkumar2024}. LLM judges exceed 80\% agreement with human preferences but show position, verbosity and self-enhancement bias \cite{zheng2023}. $\tau$-bench includes a retail domain where strong agents succeed on under half the tasks and pass$^8$ stays under 25\%, a warning on consistency when a bot can act \cite{yao2025}.
+
+\subsection{Data, synthetic data and privacy}
+Amazon Reviews 2023 offers 570M+ reviews and 48M items with metadata across 33 categories \cite{hou2024}. Synthetic training data degrades as task subjectivity rises and lacks diversity \cite{li2023synth}; class-conditional prompts introduce bias, while attribute-diverse prompts help \cite{yu2023}; retrieval-augmented synthesis improves diversity and human-likeness \cite{divekar2024}. Scrubbing reduces but does not prevent PII leakage, and sentence-level differential privacy still leaked about 3\% of PII sequences \cite{lukas2023}, so regex masking alone does not ``ensure compliance''.
+
+%% ------------------------------------------------------------
+\section{Research Gaps and How We Address Them}
+\begin{longtable}{@{}p{0.6cm}p{5.6cm}p{7.6cm}@{}}
+\toprule
+\textbf{\#} & \textbf{Gap} & \textbf{Our response (within 2 hours)}\\
+\midrule
+\endhead
+1 & Detection, empathetic strategy and handoff are studied separately; no end-to-end retail evaluation. & Single pipeline evaluated on scenario set S1--S8 for all three stages. \textbf{Primary novelty claim.}\\
+2 & No public retail chat corpus with turn-level sentiment, escalation labels and order context. & Synthetic multi-turn dialogues plus a hand-labeled real-style test set (FR12).\\
+3 & Trajectory-aware real-time sentiment is open; most work classifies static text. & Decayed average and slope feed the escalation rule (FR3).\\
+4 & Aspect-level sentiment inside dialogue is thin. & Lightweight aspect tagger via keyword lexicon (FR9), LLM fallback.\\
+5 & LLM empathy is unreliable; unclear when empathy should defer to action. & Prompt enforces ``acknowledge $\rightarrow$ act'' order; ablation with and without empathy prompt.\\
+6 & No validated retail empathy rubric. & 3-item rubric adapted from EPITOME (emotion, interpretation, exploration) plus 1--5 overall.\\
+7 & Escalation evaluated with accuracy-style metrics. & Report escalation recall and precision with a 5:1 cost ratio for late versus early handoff.\\
+8 & Code-mixed and multilingual chat underperforms. & \textbf{Out of scope}; documented limitation.\\
+9 & Synthetic data may not transfer, especially for negatives. & Attribute-diverse prompt generation \cite{yu2023}; test only on hand-labeled data.\\
+10 & Disclosure changes how empathy is perceived. & Always disclose AI; note as future A/B test.\\
+11 & Policy safety: an empathetic bot may promise an unauthorized refund. & Guardrail and regression test on S6 (Section~\ref{sec:safety}).\\
+\bottomrule
+\end{longtable}
+
+%% ------------------------------------------------------------
+\section{System Design}
+\subsection{Architecture}
+\begin{center}
+\begin{tikzpicture}[node distance=0.7cm and 0.9cm,
+  box/.style={draw,rounded corners,align=center,minimum height=0.95cm,minimum width=2.3cm,fill=blue!6,font=\small},
+  arr/.style={-{Stealth[length=2mm]},thick}]
+\node[box] (ui) {Streamlit\\chat UI};
+\node[box,right=of ui] (pii) {PII\\masking};
+\node[box,right=of pii] (sent) {Sentiment\\+ aspect};
+\node[box,right=of sent] (traj) {Trajectory\\tracker};
+\node[box,below=of traj] (esc) {Escalation\\engine};
+\node[box,left=of esc] (rag) {KB retrieval\\(products, policy)};
+\node[box,left=of rag] (gen) {LLM reply\\+ guardrail};
+\node[box,below=of gen,fill=green!8] (out) {Reply, badge,\\handoff summary};
+\draw[arr] (ui)--(pii); \draw[arr] (pii)--(sent); \draw[arr] (sent)--(traj);
+\draw[arr] (traj)--(esc); \draw[arr] (esc)--(rag); \draw[arr] (rag)--(gen);
+\draw[arr] (gen)--(out); \draw[arr] (esc.south) |- ([yshift=-0.35cm]out.east) -- (out.east);
+\end{tikzpicture}
+\end{center}
+
+\subsection{Components}
+\paragraph{Sentiment model.} Primary choice: a pretrained three-class model (\texttt{cardiffnlp/twitter-roberta-base-sentiment-latest}), used zero-shot, then optionally fine-tuned for one epoch on our synthetic set if time allows. It is small, runs on CPU and is trained on short informal text, which matches chat. An LLM few-shot classifier is the fallback for sarcasm cases.
+
+\paragraph{Trajectory.} Map labels to $s_t\in\{-1,0,+1\}$ weighted by confidence. Conversation score $C_t=\lambda C_{t-1}+(1-\lambda)s_t$ with $\lambda=0.6$; drift is the slope of the last three $s_t$.
+
+\paragraph{Escalation engine.} Escalate if any rule fires:
+\begin{enumerate}[label=R\arabic*.]
+\item Two or more consecutive negative turns with confidence $\ge 0.7$.
+\item $C_t \le -0.5$ or drift $\le -0.6$.
+\item Keyword class: legal threat, fraud, safety, ``speak to a human''.
+\item Same intent repeated three times without resolution.
+\item Bot confidence low and sentiment negative.
+\end{enumerate}
+Thresholds are configurable in one file and tuned on the labeled set to meet the escalation-recall target.
+
+\paragraph{Reply generator.} An LLM call with a system prompt that (i) states the sentiment and strategy, (ii) requires acknowledging the feeling first, then acting, (iii) injects retrieved KB snippets and (iv) forbids commitments not present in those snippets. Strategy is selected by rule rather than left to the model, because LLMs show strategy preference bias \cite{kang2024}: negative$\to$reflect and apologize, neutral$\to$inform, positive$\to$affirm.
+
+\paragraph{Retail knowledge base.} A JSON file of about 15 products, a mock order table, and 8--10 policy entries (returns, shipping, refunds). Retrieval is keyword or TF-IDF over these entries; no vector database.
+
+\subsection{Safety and privacy}\label{sec:safety}
+\begin{itemize}
+\item \textbf{Commitment guardrail:} post-generation regex and rule check rejects replies containing refund, credit or delivery-date claims not found in the retrieved KB; on rejection, fall back to a templated reply plus escalation.
+\item \textbf{PII masking:} regex for emails, phones and card-like numbers before logging; names via a lightweight NER pass if time permits. This is best effort, and Lukas et al.\ show masking is not a full guarantee \cite{lukas2023}. No chat text is stored in the demo.
+\item \textbf{AI disclosure} on every session start.
+\end{itemize}
+
+%% ------------------------------------------------------------
+\section{Data Plan}
+\begin{center}
+\begin{tabular}{@{}p{3.4cm}p{4.3cm}p{6.3cm}@{}}
+\toprule
+\textbf{Dataset} & \textbf{Source} & \textbf{Use}\\
+\midrule
+Amazon Reviews 2023 (small category subset) & Public \cite{hou2024} & Optional fine-tune sample; product metadata for KB\\
+Synthetic dialogues (300--500 turns) & LLM-generated with attribute-diverse prompts \cite{yu2023} & Training or few-shot examples; scenario demos\\
+Hand-labeled test set (100+ turns) & Written by team, disjoint from synthetic prompts & \textbf{Only source of reported accuracy}\\
+\bottomrule
+\end{tabular}
+\end{center}
+Attributes varied in generation: product category, issue type, customer tone, formality, message length, sarcasm, and mixed-aspect messages. Preprocessing: lowercase-preserving cleanup, URL and PII masking, deduplication, class balancing by downsampling positives. Synthetic data is never used in the test set, given the transfer risk \cite{li2023synth}.
+
+%% ------------------------------------------------------------
+\section{Evaluation Plan}
+\begin{enumerate}
+\item \textbf{Sentiment:} accuracy, macro-F1, per-class precision and recall, confusion matrix on the hand-labeled set.
+\item \textbf{Escalation:} 12 scripted conversations with a gold escalate turn. Report recall, precision and mean turns-late; cost $=5\times\text{late}+1\times\text{early}$.
+\item \textbf{Empathy:} 20 replies rated 1--5 by three teammates on emotion acknowledgement, interpretation and exploration; optional LLM judge with randomized order and length control to limit known biases \cite{zheng2023}. Compare against a no-empathy baseline prompt.
+\item \textbf{Safety:} 10 adversarial prompts (demand for refund, discount, guaranteed date). Pass means zero unauthorized commitments.
+\item \textbf{Latency:} median and p95 per turn over 30 calls.
+\end{enumerate}
+
+%% ------------------------------------------------------------
+\section{Two-Hour Implementation Plan}\label{sec:plan}
+The repository skeleton already exists (\texttt{src/data}, \texttt{src/sentiment}, \texttt{src/chatbot}, \texttt{src/app}, \texttt{docs}, \texttt{tests}).
+
+\begin{longtable}{@{}p{2.1cm}p{2.6cm}p{6.6cm}p{2.5cm}@{}}
+\toprule
+\textbf{Time} & \textbf{Owner} & \textbf{Task} & \textbf{Output}\\
+\midrule
+\endhead
+0:00--0:10 & All & Confirm scope, install deps, split roles, get API key working. & Env ready\\
+0:10--0:30 & Data & Generate synthetic dialogues; write 100+ labeled test turns; build KB JSON (products, orders, policy). & \texttt{data/}\\
+0:10--0:35 & ML & Load pretrained sentiment model, \texttt{predict.py}, \texttt{evaluate.py}; first accuracy and F1 numbers. & \texttt{src/sentiment/}\\
+0:30--1:00 & Chatbot & \texttt{escalation.py}, trajectory tracker, \texttt{retail\_context.py} retrieval, \texttt{responder.py} with guardrail. & \texttt{src/chatbot/}\\
+0:35--1:05 & UI & Streamlit chat, sentiment badge, trajectory chart, escalation banner. & \texttt{src/app/main.py}\\
+1:05--1:25 & All & Integrate, run scenarios S1--S8, tune thresholds, run safety tests, fix bugs. & Working demo\\
+1:25--1:40 & ML/Data & Final metrics table and confusion matrix; empathy ratings. & Results\\
+1:40--1:55 & All & Record demo video (about 3 min), finalize docs. & \texttt{demo/}, \texttt{docs/}\\
+1:55--2:00 & All & Commit and push. & Submission\\
+\bottomrule
+\end{longtable}
+
+\subsection{Cut list, in order of removal if behind schedule}
+1) Aspect tagging, 2) trajectory chart, 3) fine-tuning (keep zero-shot), 4) LLM judge, 5) handoff summary. \textbf{Never cut:} sentiment metrics, escalation rules, the commitment guardrail, and the demo video.
+
+\subsection{Repository mapping}
+\begin{center}
+\begin{tabular}{@{}p{5.6cm}p{8.4cm}@{}}
+\toprule
+\textbf{File} & \textbf{Responsibility}\\
+\midrule
+\texttt{src/data/generate\_synthetic.py} & LLM-driven dialogue generation with attribute sampling\\
+\texttt{src/data/preprocess.py} & PII masking, cleaning, dedup, balancing\\
+\texttt{src/sentiment/predict.py} & Model load, per-turn label and probabilities\\
+\texttt{src/sentiment/evaluate.py} & Accuracy, macro-F1, negative recall, confusion matrix\\
+\texttt{src/chatbot/escalation.py} & Trajectory tracker and rules R1--R5\\
+\texttt{src/chatbot/retail\_context.py} & KB load and retrieval\\
+\texttt{src/chatbot/responder.py} & Prompt assembly, LLM call, guardrail\\
+\texttt{src/app/main.py} & Streamlit UI\\
+\texttt{tests/} & Escalation rules and guardrail regression tests\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%% ------------------------------------------------------------
+\section{Demo Video Script (about 3 minutes)}
+\begin{enumerate}
+\item 0:00--0:20: Problem and pipeline diagram.
+\item 0:20--0:50: S1 and S2, positive and neutral, calm replies.
+\item 0:50--1:30: S3 into S4, sentiment drifts down and the banner escalates with a handoff summary.
+\item 1:30--1:50: S5, mixed aspects handled in one reply.
+\item 1:50--2:15: S6, refund demand where the bot empathizes without promising and offers a human.
+\item 2:15--2:40: Metrics slide: accuracy, macro-F1, negative recall, escalation recall, safety pass.
+\item 2:40--3:00: Limitations and next steps.
+\end{enumerate}
+
+%% ------------------------------------------------------------
+\section{Risks and Mitigations}
+\begin{center}
+\begin{tabular}{@{}p{4.6cm}p{2cm}p{7.4cm}@{}}
+\toprule
+\textbf{Risk} & \textbf{Impact} & \textbf{Mitigation}\\
+\midrule
+Accuracy below 80\% on hand-labeled set & High & Try LLM few-shot on failures; collapse to negative/non-negative if needed and say so\\
+LLM API outage or latency & High & Templated fallback replies per strategy\\
+Bot promises an unauthorized refund & High & Guardrail and regression test\\
+Sarcasm misclassified & Medium & Sarcasm cases in test set; LLM fallback\\
+Synthetic data unrealistic & Medium & Test only on hand-labeled data\\
+Time overrun & High & Cut list above\\
+PII in logs & Medium & Mask before any write; store nothing in demo\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%% ------------------------------------------------------------
+\section{Limitations and Future Work}
+English only (Hinglish and code-mixed text is a known weak spot \cite{patwa2020}); small test set, so confidence intervals will be wide; empathy ratings come from teammates, not customers; mock order data; no disclosed versus undisclosed A/B test. Future work: trained handoff predictor in the style of \cite{liu2021handoff}, ABSA within dialogue, code-mixed support, a validated retail empathy rubric, and cost-calibrated escalation thresholds on real chat logs.
+
+%% ------------------------------------------------------------
+\begin{thebibliography}{99}\small
+\bibitem{rashkin2019} Rashkin, Smith, Li, Boureau. Towards Empathetic Open-domain Conversation Models. ACL 2019. arXiv:1811.00207.
+\bibitem{liu2021esc} Liu et al. Towards Emotional Support Dialog Systems. ACL 2021, pp.\ 3469--3483. doi:10.18653/v1/2021.acl-long.269.
+\bibitem{kang2024} Kang et al. Can LLMs be Good Emotional Supporter? Mitigating Preference Bias on Emotional Support Conversation. ACL 2024. arXiv:2402.13211.
+\bibitem{zhang2024} Zhang, Deng, Liu, Pan, Bing. Sentiment Analysis in the Era of Large Language Models: A Reality Check. Findings of NAACL 2024. arXiv:2305.15005.
+\bibitem{zhang2022absa} Zhang, Li, Deng, Bing, Lam. A Survey on Aspect-Based Sentiment Analysis. arXiv:2203.01054.
+\bibitem{pereira2022} Pereira, Moniz, Carvalho. Deep Emotion Recognition in Textual Conversations: A Survey. arXiv:2211.09172.
+\bibitem{pereira2023} Pereira et al. Context-Dependent Embedding Utterance Representations for Emotion Recognition in Conversations. 2023. \textit{(secondary listing; verify venue and ID)}
+\bibitem{patwa2020} Patwa et al. SemEval-2020 Task 9: Overview of Sentiment Analysis of Code-Mixed Tweets. arXiv:2008.04277.
+\bibitem{liu2021handoff} Liu et al. Time to Transfer: Predicting and Evaluating Machine-Human Chatting Handoff. AAAI 2021. arXiv:2012.07610.
+\bibitem{agarwal2021} Agarwal, Maiya, Aggarwal. Evaluating Empathetic Chatbots in Customer Service Settings. arXiv:2101.01334.
+\bibitem{brun2025} Brun et al. Exploring Emotion-Sensitive LLM-Based Conversational AI. arXiv:2502.08920.
+\bibitem{markovitch2024} Markovitch, Stough, Huang. Consumer reactions to chatbot versus human service. J.\ Retailing and Consumer Services, 2024. doi:10.1016/j.jretconser.2024.103847.
+\bibitem{sharma2020} Sharma, Miner, Atkins, Althoff. A Computational Approach to Understanding Empathy Expressed in Text-Based Mental Health Support. EMNLP 2020. arXiv:2009.08441.
+\bibitem{raamkumar2024} Raamkumar, Loh. Towards a Multidimensional Evaluation Framework for Empathetic Conversational Systems. 2024. \textit{(secondary listing; verify venue and ID)}
+\bibitem{zheng2023} Zheng et al. Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena. NeurIPS 2023. arXiv:2306.05685.
+\bibitem{yao2025} Yao, Shinn, Razavi, Narasimhan. $\tau$-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains. ICLR 2025. arXiv:2406.12045.
+\bibitem{lewis2020} Lewis et al. Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. NeurIPS 2020. arXiv:2005.11401.
+\bibitem{hou2024} Hou et al. Bridging Language and Items for Retrieval and Recommendation (Amazon Reviews 2023). arXiv:2403.03952.
+\bibitem{li2023synth} Li et al. Synthetic Data Generation with Large Language Models for Text Classification: Potential and Limitations. arXiv:2310.07849.
+\bibitem{yu2023} Yu et al. Large Language Model as Attributed Training Data Generator: A Tale of Diversity and Bias. 2023. \textit{(secondary listing; verify venue and ID)}
+\bibitem{divekar2024} Divekar, Durrett. SynthesizRR: Generating Diverse Datasets with Retrieval Augmentation. arXiv:2405.10040.
+\bibitem{lukas2023} Lukas et al. Analyzing Leakage of Personally Identifiable Information in Language Models. IEEE S\&P 2023. arXiv:2302.00539.
+\end{thebibliography}
+
+\end{document}
