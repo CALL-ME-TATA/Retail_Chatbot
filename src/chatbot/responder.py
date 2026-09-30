@@ -4,7 +4,9 @@ import re
 from dotenv import load_dotenv
 
 load_dotenv()
-MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+# free-tier limits are per model, so fall through the list on rate-limit errors
+GEMINI_MODELS = os.getenv("GEMINI_MODELS", "gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-flash-lite-latest,gemini-3.8-flash").split(",")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 
 STRATEGY = {
     "negative": "The customer is upset. Apologize sincerely, reflect their feeling in your own words, then give one concrete next step.",
@@ -16,6 +18,8 @@ SYSTEM = (
     "Use ONLY the facts in the KNOWLEDGE section. Never promise refunds, credits, discounts, compensation or delivery dates "
     "that are not stated there; if unsure, offer to connect a human agent. Keep replies under 80 words. Strategy: {strategy}"
 )
+HANDOFF_NOTE = " A human agent is taking over this chat right now: tell the customer that, and do not ask whether they want one."
+STRICT = " Your previous draft made an unsupported claim. Do not state any price, number of days or commitment that is not in KNOWLEDGE."
 FALLBACK = {
     "negative": "I'm really sorry about this experience, and I understand how frustrating it is. Let me get this sorted for you.",
     "neutral": "Thanks for reaching out. Let me help you with that.",
@@ -41,20 +45,28 @@ def is_safe(reply: str, allowed_text: str) -> bool:
     return all(_norm(m.group(0)) in allowed for m in _CLAIM.finditer(reply))
 
 
-def respond(history: list[dict], user_msg: str, sentiment: str, snippets: list[str], escalate: bool) -> tuple[str, bool]:
-    """-> (reply, safe). safe=False means the LLM output was rejected and a template was used."""
-    reply, safe = None, True
-    if os.getenv("ANTHROPIC_API_KEY"):
-        try:
+def draft(history: list[dict], user_msg: str, sentiment: str, snippets: list[str], strict: bool = False, escalate: bool = False) -> str | None:
+    """LLM draft via Gemini (LangChain) or Claude; None if no provider is configured or the call fails."""
+    system = SYSTEM.format(strategy=STRATEGY[sentiment]) + (STRICT if strict else "") + (HANDOFF_NOTE if escalate else "") + "\n\nKNOWLEDGE:\n" + "\n".join(snippets)
+    if os.getenv("GEMINI_API_KEY"):
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        msgs = [("system", system)] + [("human" if m["role"] == "user" else "ai", m["content"]) for m in history]
+        for model in GEMINI_MODELS:
+            try:
+                llm = ChatGoogleGenerativeAI(model=model, google_api_key=os.environ["GEMINI_API_KEY"],
+                                             temperature=0.4, max_output_tokens=2000, timeout=20, max_retries=0)
+                out = llm.invoke(msgs + [("human", user_msg)]).text.strip()
+                if out:
+                    return out
+            except Exception as e:
+                print(f"[responder] {model} failed: {type(e).__name__}")
+    try:
+        if os.getenv("ANTHROPIC_API_KEY"):
             import anthropic
             r = anthropic.Anthropic().messages.create(
-                model=MODEL, max_tokens=250,
-                system=SYSTEM.format(strategy=STRATEGY[sentiment]) + "\n\nKNOWLEDGE:\n" + "\n".join(snippets),
+                model=ANTHROPIC_MODEL, max_tokens=250, system=system,
                 messages=history + [{"role": "user", "content": user_msg}])
-            reply = r.content[0].text.strip()
-            if not is_safe(reply, "\n".join(snippets) + " " + user_msg):
-                reply, safe = None, False
-        except Exception:
-            reply = None  # API down -> template, not a guardrail failure
-    reply = reply or FALLBACK[sentiment]
-    return reply + (HANDOFF if escalate else ""), safe
+            return r.content[0].text.strip()
+    except Exception as e:  # API down, quota, no credits -> caller falls back to a template
+        print(f"[responder] LLM call failed: {type(e).__name__}")
+    return None
