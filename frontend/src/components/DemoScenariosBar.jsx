@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
-import { PlayCircle, ChevronDown, ChevronUp, Sparkles, CheckCircle } from 'lucide-react';
-import { DEMO_SCENARIOS } from '../data/mockData';
+import React, { useEffect, useState } from 'react';
+import { PlayCircle, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
+import { getScenarios } from '../api';
 
 export default function DemoScenariosBar({ onSelectScenario }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeScenarioId, setActiveScenarioId] = useState(null);
+  const [scenarios, setScenarios] = useState([]);
+
+  useEffect(() => {
+    getScenarios().then(setScenarios).catch(() => setScenarios([]));
+  }, []);
 
   const handleRun = (scenario) => {
     setActiveScenarioId(scenario.id);
@@ -19,11 +24,9 @@ export default function DemoScenariosBar({ onSelectScenario }) {
             <Sparkles className="w-3.5 h-3.5" />
           </div>
           <div>
-            <h4 className="text-xs font-semibold text-ink">
-              Hackathon Evaluation Mode: PRD Demo Scenarios
-            </h4>
+            <h4 className="text-xs font-semibold text-ink">Demo Scenarios</h4>
             <p className="text-[11px] text-ink-secondary">
-              Instant 1-click test runners for all 7 required sentiment & escalation test cases
+              Each one sends a real message through the backend pipeline ({scenarios.length} loaded)
             </p>
           </div>
         </div>
@@ -33,14 +36,14 @@ export default function DemoScenariosBar({ onSelectScenario }) {
           onClick={() => setIsExpanded(!isExpanded)}
           className="px-2.5 py-1 text-xs font-medium text-ink-secondary hover:text-ink rounded-md hover:bg-background border border-border flex items-center gap-1 transition-smooth"
         >
-          <span>{isExpanded ? 'Hide Scenarios' : 'Explore 7 Scenarios'}</span>
+          <span>{isExpanded ? 'Hide Scenarios' : `Explore ${scenarios.length} Scenarios`}</span>
           {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         </button>
       </div>
 
       {isExpanded && (
         <div className="mt-3 pt-3 border-t border-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-          {DEMO_SCENARIOS.map((sc) => {
+          {scenarios.map((sc) => {
             const isCurrent = activeScenarioId === sc.id;
             return (
               <button
@@ -54,9 +57,7 @@ export default function DemoScenariosBar({ onSelectScenario }) {
                 }`}
               >
                 <div className="flex items-center justify-between gap-1 mb-1">
-                  <span className="font-semibold text-[11px] truncate">
-                    {sc.title}
-                  </span>
+                  <span className="font-semibold text-[11px] truncate">{sc.title}</span>
                   <span className={`text-[9px] px-1 py-0.2 rounded border font-semibold ${
                     sc.badgeColor === 'danger'
                       ? 'bg-danger-light text-danger border-danger-border'
@@ -69,12 +70,10 @@ export default function DemoScenariosBar({ onSelectScenario }) {
                     {sc.badge}
                   </span>
                 </div>
-                <p className="text-[10px] text-ink-secondary line-clamp-2 italic">
-                  "{sc.inputPrompt}"
-                </p>
+                <p className="text-[10px] text-ink-secondary line-clamp-2 italic">"{sc.inputPrompt}"</p>
                 <div className="flex items-center gap-1 mt-1.5 text-[10px] text-primary font-medium">
                   <PlayCircle className="w-3 h-3" />
-                  <span>Run Scenario Demo</span>
+                  <span>Run through pipeline</span>
                 </div>
               </button>
             );
