@@ -58,9 +58,9 @@
   {
     "id": "sc-8",
     "title": "Sarcasm",
-    "badge": "Negative",
+    "badge": "Known limit",
     "badgeColor": "warning",
-    "description": "Sarcastic complaint that a literal reading would miss.",
+    "description": "Sarcasm: the sentiment model reads this literally (shows as positive).",
     "inputPrompt": "Great, another delay. Just what I needed."
   },
   {

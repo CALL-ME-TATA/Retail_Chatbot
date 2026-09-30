@@ -213,5 +213,5 @@ def _process(c: dict, message: str) -> dict:
 def chat(body: ChatIn):
     c = _convs.get(body.session_id) or _new_conv(body.session_id)
     r = _process(c, body.message)
-    out = {k: r[k] for k in ("reply", "sentiment", "escalation", "trajectory", "path", "handoff_summary", "aspect")}
+    out = {k: r[k] for k in ("reply", "sentiment", "escalation", "scope", "trajectory", "path", "handoff_summary", "aspect")}
     return {**out, "conversation": _view(c), "stats": _stats()}
