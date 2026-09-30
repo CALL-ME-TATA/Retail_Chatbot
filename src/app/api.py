@@ -3,8 +3,11 @@
 Everything the frontend shows is computed here from real pipeline runs (no canned data).
 """
 import json
+import os
 import re
+import threading
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -17,10 +20,31 @@ from src.chatbot.responder import STRATEGY
 
 ROOT = Path(__file__).parents[2]
 KB = json.loads((ROOT / "data" / "retail_kb.json").read_text(encoding="utf-8"))
+CUSTOMERS = {c["id"]: c for c in KB.get("customers", [])}
 SCENARIOS = json.loads((ROOT / "data" / "demo_scenarios.json").read_text(encoding="utf-8"))
+DEMO_CONVS = json.loads((ROOT / "data" / "demo_conversations.json").read_text(encoding="utf-8"))
 EVAL_PATH = ROOT / "data" / "processed" / "eval_results.json"
 
-app = FastAPI(title="EmpathIQ API")
+
+def _seed(convs):
+    """Run each demo customer's opening messages through the real pipeline (background, so the API starts at once)."""
+    for c, messages in convs:
+        for m in messages:
+            try:
+                _process(c, m)
+            except Exception as e:
+                print(f"[seed] {c['customer']}: {type(e).__name__}: {e}")
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    if os.getenv("SEED_DEMO", "1") == "1":  # SEED_DEMO=0 starts with an empty inbox
+        convs = [(_new_conv(customer=CUSTOMERS[d["customer"]]), d["messages"]) for d in DEMO_CONVS]
+        threading.Thread(target=_seed, args=(convs,), daemon=True).start()
+    yield
+
+
+app = FastAPI(title="EmpathIQ API", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])  # dev only
 
 # ponytail: in-memory state; use Redis/Postgres if multiple workers or persistence are needed
@@ -48,10 +72,19 @@ def _now():
     return datetime.now().strftime("%I:%M %p")
 
 
-def _new_conv(cid: str | None = None) -> dict:
+def _new_conv(cid: str | None = None, customer: dict | None = None) -> dict:
+    """New conversation for the given customer, else the next customer without one, else a walk-in."""
     n = len(_convs) + 1
-    c = {"id": cid or f"conv-{n}", "customer": f"Customer {n}", "initials": f"C{n}", "session": Session(),
-         "messages": [], "turns": [], "order": None, "last": None}
+    if customer is None:
+        used = {c["customer_id"] for c in _convs.values()}
+        customer = next((k for k in CUSTOMERS.values() if k["id"] not in used), None)
+    name = customer["name"] if customer else f"Walk-in customer {n}"
+    order = customer and KB["orders"].get(customer["order"])
+    c = {"id": cid or f"conv-{n}", "customer_id": customer["id"] if customer else None, "customer": name,
+         "initials": "".join(w[0] for w in name.split()[:2]).upper(),
+         "since": f"Customer since {customer['since']}" if customer else "New session",
+         "session": Session(), "messages": [], "turns": [], "last": None,
+         "order": {"id": customer["order"], **order} if order else None}
     _convs[c["id"]] = c
     return c
 
@@ -61,7 +94,7 @@ def _view(c: dict) -> dict:
     last, order = c["last"], c["order"]
     v = {"id": c["id"], "customer": c["customer"], "initials": c["initials"], "avatar": None,
          "messages": c["messages"], "lastMessage": c["messages"][-1]["content"] if c["messages"] else "No messages yet",
-         "timestamp": "Just now" if c["messages"] else "New", "customerSince": "New session",
+         "timestamp": c["messages"][-1]["time"] if c["messages"] else "New", "customerSince": c["since"],
          "orderId": order["id"] if order else "No order",
          "product": order["item"] if order else "No order referenced",
          "orderStatus": order["status"] if order else "No order referenced",
@@ -151,25 +184,31 @@ def insights():
             "model_eval": json.loads(EVAL_PATH.read_text()) if EVAL_PATH.exists() else None}
 
 
-@app.post("/chat")
-def chat(body: ChatIn):
-    c = _convs.get(body.session_id) or _new_conv(body.session_id)
+def _process(c: dict, message: str) -> dict:
+    """Run one customer message through the LangGraph pipeline and record the result on the conversation."""
     t0 = time.time()
-    r = c["session"].chat(body.message)
+    r = c["session"].chat(message)
     latency = time.time() - t0
-    r["aspect"] = tag_aspect(body.message)
-    for oid in _ORDER.findall(body.message):
+    r["aspect"] = tag_aspect(message)
+    for oid in _ORDER.findall(message):
         if o := KB["orders"].get(oid.upper()):
             c["order"] = {"id": oid.upper(), **o}
     lab = r["sentiment"]["label"]
     k = len(c["messages"])
-    c["messages"] += [{"id": f"u-{k}", "sender": "customer", "senderName": c["customer"], "time": _now(), "content": body.message},
+    c["messages"] += [{"id": f"u-{k}", "sender": "customer", "senderName": c["customer"], "time": _now(), "content": message},
                       {"id": f"a-{k}", "sender": "ai", "senderName": "EmpathIQ AI", "time": _now(), "content": r["reply"]}]
     n = len(c["turns"]) + 1
     c["turns"].append({"turn": f"Turn {n}", "label": f"T{n}", "score": r["trajectory"][-1], "sentiment": lab.capitalize(),
-                       "aspect": r["aspect"], "text": body.message[:30] + ("..." if len(body.message) > 30 else "")})
+                       "aspect": r["aspect"], "text": message[:30] + ("..." if len(message) > 30 else "")})
     c["last"] = r
     _turns.append({"aspect": r["aspect"], "label": lab, "escalated": r["escalation"]["escalate"],
                    "first_pass": r["attempts"] == 1 and r["guardrail_passed"], "latency": latency})
-    out = {k2: r[k2] for k2 in ("reply", "sentiment", "escalation", "trajectory", "path", "handoff_summary", "aspect")}
+    return r
+
+
+@app.post("/chat")
+def chat(body: ChatIn):
+    c = _convs.get(body.session_id) or _new_conv(body.session_id)
+    r = _process(c, body.message)
+    out = {k: r[k] for k in ("reply", "sentiment", "escalation", "trajectory", "path", "handoff_summary", "aspect")}
     return {**out, "conversation": _view(c), "stats": _stats()}

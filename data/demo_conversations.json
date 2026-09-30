@@ -1,0 +1,8 @@
+[
+  {"customer": "CUST-101", "messages": ["Where is my order ORD-1002? It was supposed to arrive already.", "This is the second time I am asking and still no update. Really frustrating."]},
+  {"customer": "CUST-102", "messages": ["The BrewMate coffee maker from ORD-1004 is leaking everywhere. I want a full refund."]},
+  {"customer": "CUST-103", "messages": ["Love the AeroRun sneakers from ORD-1001, super comfortable and the delivery was fast!"]},
+  {"customer": "CUST-104", "messages": ["Can I still cancel ORD-1003? It says processing."]},
+  {"customer": "CUST-105", "messages": ["Great, the camera from ORD-1005 arrived with a cracked lens. Just perfect."]},
+  {"customer": "CUST-106", "messages": ["This is a scam, I was charged twice for ORD-1006. I am contacting my lawyer."]}
+]
