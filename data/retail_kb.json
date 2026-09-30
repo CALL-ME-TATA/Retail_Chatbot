@@ -1,0 +1,27 @@
+{
+  "products": [
+    {"id": "P1", "name": "AeroRun Sneakers", "text": "AeroRun Sneakers, lightweight running shoes, $89.99, sizes 6-13, 1 year warranty against defects."},
+    {"id": "P2", "name": "SoundPod Earbuds", "text": "SoundPod Earbuds, wireless earbuds, $59.00, 24 hour battery with case, 1 year warranty."},
+    {"id": "P3", "name": "BrewMate Coffee Maker", "text": "BrewMate Coffee Maker, 12 cup programmable, $74.50, 2 year warranty."},
+    {"id": "P4", "name": "CozyNest Blanket", "text": "CozyNest Blanket, fleece throw blanket, $29.99, machine washable."},
+    {"id": "P5", "name": "PixelView Monitor", "text": "PixelView Monitor, 27 inch 4K display, $329.00, 2 year warranty."},
+    {"id": "P6", "name": "TrailPack Backpack", "text": "TrailPack Backpack, 30L waterproof hiking backpack, $64.00, lifetime stitching guarantee."},
+    {"id": "P7", "name": "GlowSkin Moisturizer", "text": "GlowSkin Moisturizer, 50ml daily face cream, $22.00, opened cosmetics cannot be returned."},
+    {"id": "P8", "name": "SnapCam Action Camera", "text": "SnapCam Action Camera, 4K waterproof camera, $119.00, 1 year warranty."}
+  ],
+  "orders": {
+    "ORD-1001": {"item": "AeroRun Sneakers", "status": "Delivered", "note": "Delivered 3 days ago."},
+    "ORD-1002": {"item": "SoundPod Earbuds", "status": "In transit", "note": "Delayed by 2 days, new estimated delivery is in 3 days."},
+    "ORD-1003": {"item": "PixelView Monitor", "status": "Processing", "note": "Ships within 2 business days."},
+    "ORD-1004": {"item": "BrewMate Coffee Maker", "status": "Delivered", "note": "Delivered 10 days ago."}
+  },
+  "policies": [
+    {"id": "POL-RET", "text": "Returns policy: unused items can be returned within 30 days of delivery for a full refund to the original payment method."},
+    {"id": "POL-REF", "text": "Refund policy: refunds are reviewed by a human agent and take 5 to 7 business days after the returned item is received. Support chat cannot approve refunds directly."},
+    {"id": "POL-SHIP", "text": "Shipping policy: standard shipping takes 3 to 5 business days. Express shipping takes 1 to 2 business days."},
+    {"id": "POL-DEL", "text": "Late delivery policy: if an order is delayed, customers can request a human agent to review compensation. Support chat cannot promise compensation."},
+    {"id": "POL-DMG", "text": "Damaged or defective items: customers can request a replacement or refund within 30 days by sending a photo, subject to agent review."},
+    {"id": "POL-WAR", "text": "Warranty policy: warranty covers manufacturing defects only, not accidental damage."},
+    {"id": "POL-CAN", "text": "Cancellation policy: orders can be cancelled while the status is Processing. Once shipped, the item must be returned instead."}
+  ]
+}
