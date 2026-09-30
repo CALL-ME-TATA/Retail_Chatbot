@@ -4,6 +4,9 @@ transformers
 torch
 datasets
 streamlit
+fastapi
+uvicorn
+httpx
 pytest
 python-dotenv
 langgraph
