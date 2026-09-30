@@ -1,0 +1,16 @@
+text,label
+"My order ORD-1002 is late again, this is unacceptable.",negative
+"I have asked three times and nobody has helped me. Terrible service.",negative
+"The earbuds stopped working after two days. Very disappointed.",negative
+"Great, another delay. Just what I needed.",negative
+"Worst shopping experience ever, I want my money back.",negative
+"What is your return window?",neutral
+"Can you tell me the status of ORD-1003?",neutral
+"Does the monitor come with a warranty?",neutral
+"How long does standard shipping take?",neutral
+"I would like to change my delivery address.",neutral
+"Love the sneakers, they arrived super fast!",positive
+"Thank you so much, the support was excellent.",positive
+"The coffee maker is fantastic, best purchase this year.",positive
+"Really happy with my order, everything was perfect.",positive
+"Amazing quality and quick delivery, thanks!",positive
