@@ -213,6 +213,57 @@ Amazon Reviews 2023 offers 570M+ reviews and 48M items with metadata across 33 c
 \end{center}
 \noindent Solid arrows are the per-message flow; dashed arrows are reads and writes to shared resources. The Streamlit app (\texttt{src/app/main.py}) is an alternative UI that calls the same LangGraph pipeline directly, without FastAPI.
 
+\subsection{Per-message flow}
+\begin{center}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  box/.style={draw,rounded corners,align=center,minimum height=1.0cm,text width=3.0cm,fill=blue!6,font=\small},
+  term/.style={box,rounded corners=0.45cm,fill=green!8},
+  dec/.style={draw,diamond,aspect=2,align=center,font=\small,fill=orange!12,inner sep=1pt},
+  note/.style={draw,dashed,align=left,font=\scriptsize,fill=gray!8,text width=3.9cm},
+  arr/.style={-{Stealth[length=2mm]},thick},
+  lab/.style={font=\scriptsize}]
+% main column
+\node[term] (start) at (0,0) {Customer message\\{\scriptsize UI $\rightarrow$ POST /chat}};
+\node[box] (mask) at (0,-1.3) {Mask PII\\{\scriptsize email, phone, card}};
+\node[box] (sent) at (0,-2.6) {Classify sentiment\\{\scriptsize label + confidence}};
+\node[box] (traj) at (0,-3.9) {Update trajectory\\{\scriptsize $C_t = 0.6\,C_{t-1} + 0.4\,s_t$, drift}};
+\node[dec] (d1) at (0,-5.7) {Any escalation\\rule fires?};
+\node[box] (retr) at (0,-7.5) {Retrieve context\\{\scriptsize order lookup + TF-IDF}};
+\node[box] (gen) at (0,-8.8) {Generate reply (LLM)\\{\scriptsize strategy by sentiment}};
+\node[dec] (d2) at (0,-10.6) {Guardrail\\passes?};
+\node[dec] (d4) at (0,-12.6) {Escalated?};
+\node[term] (out) at (0,-14.4) {Return reply, sentiment,\\escalation, trajectory};
+% right branches
+\node[box] (esc) at (5,-5.7) {Flag escalation\\{\scriptsize reason + urgency}};
+\node[note] (rules) at (10.2,-5.7) {Checked in order:\\R3 legal, fraud or ``human'' (high)\\R5 refund or compensation demand\\R1 two confident negatives in a row\\R2 low score or falling drift\\R4 same complaint three times};
+\node[dec] (d3) at (5,-10.6) {Already\\retried?};
+\node[box] (tmpl) at (5,-12.6) {Template reply\\{\scriptsize + force escalation}};
+% left branch
+\node[box] (hand) at (-5,-12.6) {Add handoff line\\{\scriptsize + summary for agent}};
+% edges
+\draw[arr] (start) -- (mask);
+\draw[arr] (mask) -- (sent);
+\draw[arr] (sent) -- (traj);
+\draw[arr] (traj) -- (d1);
+\draw[arr] (d1) -- node[above,lab]{yes} (esc);
+\draw[arr] (d1) -- node[right,lab]{no} (retr);
+\draw[arr] (esc.south) |- (retr.east);
+\draw[dashed,thick,gray] (esc) -- (rules);
+\draw[arr] (retr) -- (gen);
+\draw[arr] (gen) -- (d2);
+\draw[arr] (d2) -- node[above,lab]{no} (d3);
+\draw[arr] (d3.north) |- node[pos=0.25,right,lab]{no: retry, stricter prompt} (gen.east);
+\draw[arr] (d3) -- node[right,lab]{yes} (tmpl);
+\draw[arr] (tmpl) -- (d4);
+\draw[arr] (d2) -- node[right,lab]{yes} (d4);
+\draw[arr] (d4) -- node[above,lab]{yes} (hand);
+\draw[arr] (d4) -- node[right,lab]{no} (out);
+\draw[arr] (hand.south) |- (out.west);
+\end{tikzpicture}}
+\end{center}
+\noindent If no LLM is reachable the generate step returns nothing and the template reply is used; the guardrail treats that as a pass.
+
 \subsection{Components}
 \paragraph{Sentiment model.} Primary choice: a pretrained three-class model (\texttt{cardiffnlp/twitter-roberta-base-sentiment-latest}), used zero-shot, then optionally fine-tuned for one epoch on our synthetic set if time allows. It is small, runs on CPU and is trained on short informal text, which matches chat. An LLM few-shot classifier is the fallback for sarcasm cases.
 
