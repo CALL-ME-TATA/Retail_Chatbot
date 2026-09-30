@@ -36,6 +36,13 @@ SENTIMENT_MODEL=models/retail-sentiment python -m src.sentiment.evaluate
 streamlit run src/app/main.py
 python -m pytest tests -q
 ```
+Full demo (React frontend + API), in two terminals:
+```bash
+python -m uvicorn src.app.api:app --port 8000     # backend
+cd frontend && npm install && npm run dev          # frontend on http://localhost:5173
+```
+The frontend calls `POST /chat`; if the backend is down it falls back to its built-in mock so the demo never breaks. The Streamlit app is an alternative UI.
+
 Without an API key the bot still works using template replies.
 
 ## Results (106 chat-style test turns)
