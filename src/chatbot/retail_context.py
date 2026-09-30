@@ -2,12 +2,27 @@ import json
 import re
 from pathlib import Path
 
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 _KB = json.loads((Path(__file__).parents[2] / "data" / "retail_kb.json").read_text(encoding="utf-8"))
 _DOCS = [d["text"] for d in _KB["products"] + _KB["policies"]]
-_VEC = TfidfVectorizer(stop_words="english").fit(_DOCS)
+
+
+def _tok(text: str) -> list[str]:
+    # crude stemmer so "returns/returned/returning" all match "return"
+    out = []
+    for w in re.findall(r"[a-z0-9-]+", text.lower()):
+        if w in ENGLISH_STOP_WORDS:
+            continue
+        if len(w) > 4:
+            w = re.sub(r"(ing|ed|es|s)$", "", w)
+            w = re.sub(r"(.)\1$", r"\1", w)  # shipp -> ship
+        out.append(w)
+    return out
+
+
+_VEC = TfidfVectorizer(analyzer=_tok).fit(_DOCS)
 _MAT = _VEC.transform(_DOCS)
 _ORDER = re.compile(r"ORD-\d+", re.I)
 
