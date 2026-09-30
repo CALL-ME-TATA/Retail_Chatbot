@@ -38,6 +38,14 @@ python -m pytest tests -q
 ```
 Without an API key the bot still works using template replies.
 
+## Results (106 chat-style test turns)
+| Model | Accuracy | Macro-F1 | Negative recall |
+|---|---|---|---|
+| Zero-shot RoBERTa (cardiffnlp), default | 97.2% | 0.972 | 0.943 |
+| DistilBERT fine-tuned on Amazon reviews | 84.0% | 0.836 | 0.857 |
+
+Both clear the 80% target. Details and caveats in [docs/sentiment_model.md](docs/sentiment_model.md); API in [docs/integration.md](docs/integration.md).
+
 ## Demo scenarios
 1. Neutral question: "What is your return window?" -> factual answer from the policy KB.
 2. Late order (ORD-1002) -> apology plus order status; sentiment drops.
