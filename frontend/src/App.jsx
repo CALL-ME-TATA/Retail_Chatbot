@@ -27,8 +27,8 @@ import KnowledgeView from './components/KnowledgeView';
 import {
   MOCK_CONVERSATIONS,
   INITIAL_STATS,
-  simulateAiAnalysis
 } from './data/mockData';
+import { analyzeMessage } from './api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('conversation');
@@ -71,8 +71,7 @@ export default function App() {
     // Trigger AI Sentiment Analysis & Response
     setIsAnalyzing(true);
 
-    setTimeout(() => {
-      const analysis = simulateAiAnalysis(text);
+    analyzeMessage(selectedConversation.id, text).then((analysis) => {
       const aiTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
       const aiMessage = {
@@ -145,7 +144,7 @@ export default function App() {
       }
 
       setIsAnalyzing(false);
-    }, 750);
+    });
   };
 
   // Run one of the 7 predefined PRD Hackathon Demo Scenarios
