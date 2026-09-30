@@ -105,7 +105,8 @@ class Session:
         self.history += [{"role": "user", "content": s["text"]}, {"role": "assistant", "content": s["final"]}]
         self.trajectory.append(round(self.tracker.C, 3))
         return {"reply": s["final"], "sentiment": s["pred"], "escalation": s["esc"],
-                "trajectory": self.trajectory, "path": s["path"], "handoff_summary": self._summary(s["esc"])}
+                "trajectory": self.trajectory, "path": s["path"],
+                "attempts": s["attempts"], "guardrail_passed": s["safe"], "handoff_summary": self._summary(s["esc"])}
 
     def _summary(self, esc):
         if not esc["escalate"]:
