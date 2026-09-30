@@ -3,8 +3,8 @@
 \usepackage[T1]{fontenc}
 \usepackage{lmodern,microtype,booktabs,longtable,array,enumitem,xcolor,titlesec}
 \usepackage[colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black,citecolor=blue!50!black]{hyperref}
-\usepackage{tikz}
-\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+\usepackage{graphicx,tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit}
 \setlist{itemsep=2pt,topsep=3pt}
 \titleformat{\section}{\Large\bfseries}{\thesection}{0.6em}{}
 \newcommand{\req}[1]{\textbf{#1}}
@@ -166,22 +166,52 @@ Amazon Reviews 2023 offers 570M+ reviews and 48M items with metadata across 33 c
 \section{System Design}
 \subsection{Architecture}
 \begin{center}
-\begin{tikzpicture}[node distance=0.7cm and 0.9cm,
-  box/.style={draw,rounded corners,align=center,minimum height=0.95cm,minimum width=2.3cm,fill=blue!6,font=\small},
-  arr/.style={-{Stealth[length=2mm]},thick}]
-\node[box] (ui) {Streamlit\\chat UI};
-\node[box,right=of ui] (pii) {PII\\masking};
-\node[box,right=of pii] (sent) {Sentiment\\+ aspect};
-\node[box,right=of sent] (traj) {Trajectory\\tracker};
-\node[box,below=of traj] (esc) {Escalation\\engine};
-\node[box,left=of esc] (rag) {KB retrieval\\(products, policy)};
-\node[box,left=of rag] (gen) {LLM reply\\+ guardrail};
-\node[box,below=of gen,fill=green!8] (out) {Reply, badge,\\handoff summary};
-\draw[arr] (ui)--(pii); \draw[arr] (pii)--(sent); \draw[arr] (sent)--(traj);
-\draw[arr] (traj)--(esc); \draw[arr] (esc)--(rag); \draw[arr] (rag)--(gen);
-\draw[arr] (gen)--(out); \draw[arr] (esc.south) |- ([yshift=-0.35cm]out.east) -- (out.east);
-\end{tikzpicture}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  box/.style={draw,rounded corners,align=center,minimum height=1.0cm,text width=3.0cm,fill=blue!6,font=\small},
+  res/.style={box,fill=gray!12},
+  out/.style={box,fill=green!8},
+  arr/.style={-{Stealth[length=2mm]},thick},
+  dep/.style={dashed,gray!70!black,thick}]
+% client and API
+\node[box] (ui) at (2.05,0) {React frontend\\{\scriptsize Vite + Tailwind}};
+\node[box,text width=7.1cm] (api) at (2.05,-1.8) {FastAPI + Uvicorn\\{\scriptsize /chat, /conversations, /stats, /insights, /knowledge}};
+% shared resources
+\node[res] (store) at (8.2,-1.8) {Session store\\{\scriptsize in-memory, per conversation}};
+\node[res] (kb) at (12.3,-1.8) {Retail KB (JSON)\\{\scriptsize products, orders, policies}};
+% LangGraph nodes, row 1 (left to right)
+\node[box] (mask) at (0,-3.8) {PII masking\\{\scriptsize regex: email, phone, card}};
+\node[box] (sent) at (4.1,-3.8) {Sentiment\\{\scriptsize RoBERTa / DistilBERT}};
+\node[box] (track) at (8.2,-3.8) {Trajectory + escalation\\{\scriptsize decay, drift, rules R1--R5}};
+\node[box] (retr) at (12.3,-3.8) {KB retrieval (RAG)\\{\scriptsize TF-IDF + order lookup}};
+% LangGraph nodes, row 2 (right to left)
+\node[box] (gen) at (12.3,-6.2) {LLM reply\\{\scriptsize Gemini via LangChain}};
+\node[box] (guard) at (8.2,-6.2) {Guardrail\\{\scriptsize blocks unsupported claims}};
+\node[box] (fin) at (4.1,-6.2) {Finalize\\{\scriptsize template fallback + handoff}};
+\node[out] (out) at (0,-6.2) {Reply, sentiment,\\escalation, trajectory,\\handoff summary};
+\node[res] (llm) at (12.3,-8.5) {Gemini API\\{\scriptsize backup: Claude, then template}};
+% LangGraph frame
+\node[draw,dashed,rounded corners,inner sep=0.3cm,fit=(mask)(retr)(gen)(out),
+  label={[font=\small\itshape,anchor=north west]south west:{LangGraph StateGraph (one run per customer message)}}] (lg) {};
+% main flow
+\draw[arr] (ui) -- node[right,font=\scriptsize]{HTTP / JSON} (api);
+\draw[arr] (mask.north |- api.south) -- node[right,font=\scriptsize]{message} (mask.north);
+\draw[arr] (mask) -- (sent);
+\draw[arr] (sent) -- (track);
+\draw[arr] (track) -- (retr);
+\draw[arr] (retr) -- (gen);
+\draw[arr] (gen) -- (guard);
+\draw[arr] (guard) -- node[above,font=\scriptsize]{safe} (fin);
+\draw[arr] (guard.north) to[bend left=45] node[above,font=\scriptsize]{unsafe: retry once} (gen.north west);
+\draw[arr] (fin) -- (out);
+\draw[arr] (out.west) -- ++(-0.6,0) |- node[pos=0.25,left,font=\scriptsize,align=right]{JSON\\response} (api.west);
+% resource access
+\draw[dep,<->] (store) -- (track);
+\draw[dep,->] (kb) -- (retr);
+\draw[dep,<->] (llm) -- (gen);
+\end{tikzpicture}}
 \end{center}
+\noindent Solid arrows are the per-message flow; dashed arrows are reads and writes to shared resources. The Streamlit app (\texttt{src/app/main.py}) is an alternative UI that calls the same LangGraph pipeline directly, without FastAPI.
 
 \subsection{Components}
 \paragraph{Sentiment model.} Primary choice: a pretrained three-class model (\texttt{cardiffnlp/twitter-roberta-base-sentiment-latest}), used zero-shot, then optionally fine-tuned for one epoch on our synthetic set if time allows. It is small, runs on CPU and is trained on short informal text, which matches chat. An LLM few-shot classifier is the fallback for sarcasm cases.
