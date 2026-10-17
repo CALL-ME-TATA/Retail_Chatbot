@@ -9,11 +9,13 @@ export default function ChatWindow({
   isAnalyzing,
   onSendMessage
 }) {
-  const messagesEndRef = useRef(null);
+  const scrollRef = useRef(null);
 
+  // Scroll only the message list (scrollIntoView also scrolls the page), and only when the count changes, not on every poll.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isAnalyzing]);
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [messages.length, isAnalyzing]);
 
   if (!conversation) {
     return (
@@ -55,7 +57,7 @@ export default function ChatWindow({
       </div>
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
         {messages.map((msg) => (
           <MessageBubble
             key={msg.id}
@@ -81,8 +83,6 @@ export default function ChatWindow({
             </div>
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input area */}

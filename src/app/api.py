@@ -41,6 +41,9 @@ async def lifespan(_app):
     if os.getenv("SEED_DEMO", "1") == "1":  # SEED_DEMO=0 starts with an empty inbox
         convs = [(_new_conv(customer=CUSTOMERS[d["customer"]]), d["messages"]) for d in DEMO_CONVS]
         threading.Thread(target=_seed, args=(convs,), daemon=True).start()
+    else:  # still warm the sentiment model in the background so the first chat isn't slow
+        from src.sentiment.predict import _clf
+        threading.Thread(target=_clf, daemon=True).start()
     yield
 
 

@@ -1,13 +1,13 @@
 import os
 from functools import lru_cache
 
-from transformers import pipeline
-
 MODEL = os.getenv("SENTIMENT_MODEL", "cardiffnlp/twitter-roberta-base-sentiment-latest")
 
 
 @lru_cache(maxsize=1)
 def _clf():
+    from transformers import pipeline  # lazy: importing transformers/torch takes ~40s, keep it off API startup
+
     return pipeline("text-classification", model=MODEL, top_k=None)
 
 
